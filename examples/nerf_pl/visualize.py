@@ -14,7 +14,7 @@ from utils import load_ckpt
 from datasets import dataset_dict
 from datasets.depth_utils import *
 
-import nerfvis
+import tensorfvis
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     args = get_opts()
     w, h = args.img_wh
 
-    scene = nerfvis.Scene(args.scene_name)
+    scene = tensorfvis.Scene(args.scene_name)
 
     kwargs = {'root_dir': args.root_dir,
               'split': args.split,

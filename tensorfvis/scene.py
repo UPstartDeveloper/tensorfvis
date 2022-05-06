@@ -544,7 +544,12 @@ class Scene:
         :param image_width: float, optional, image width for weight thresholding
         :param image_height: float, optional, image height for weight thresholding
         """
+        # TODO[later]: replace the magic numbers with config vars or constants
+        # TODO[later]: use if statements wherever .cuda() is used here
+        
         import torch
+
+        # Sets params for the NeRF
         if center is None and not np.isinf(self.bb_min).any():
             center = (self.bb_min + self.bb_max) * 0.5
         if radius is None and not np.isinf(self.bb_min).any():
@@ -557,30 +562,35 @@ class Scene:
         radius *= scale
         self._update_bb(center - radius)
         self._update_bb(center + radius)
+
         print("* Discretizing NeRF (requires torch, tqdm, svox, scipy)")
 
+        # Determine how to move from camera 2 world coords, if applicable
         if r is not None and t is not None:
             c2w = np.eye(4, dtype=np.float32)[None].repeat(r.shape[0], axis=0)
             c2w[:, :3, 3] = t
             c2w[:, :3, :3] = _scipy_rotation_from_auto(r).as_matrix()
             c2w = torch.from_numpy(c2w).to(device=device)
-        else:
+        else:  # no rotations or translations going on
             c2w = None
 
-        import torch
         from tqdm import tqdm
         from svox import N3Tree
         from svox.helpers import _get_c_extension
         from .sh import project_function_sparse, project_function
         project_fun = project_function_sparse if sh_proj_use_sparse else project_function
 
+        # Let's get the PyTorch CUDA extension for PlenOctrees
         _C = _get_c_extension()
         with torch.no_grad():
-            # Hardcoded for now
             sh_dim = (sh_deg + 1) ** 2
             data_format = f"SH{sh_dim}" if use_dirs else "RGBA"
             init_grid_depth = reso.bit_length() - 2
+
+            # Guard Clause
             assert 2 ** (init_grid_depth + 1) == reso, "Grid size must be a power of 2"
+
+            # Init the PlenOctree
             tree = N3Tree(
                 N=2,
                 init_refine=0,
@@ -592,25 +602,25 @@ class Scene:
                 data_format=data_format,
                 device=device,
             )
-
             offset = tree.offset.cpu()
             scale = tree.invradius.cpu()
 
+            # Init the grid
             arr = (torch.arange(0, reso, dtype=torch.float32) + 0.5) / reso
             xx = (arr - offset[0]) / scale[0]
             yy = (arr - offset[1]) / scale[1]
             zz = (arr - offset[2]) / scale[2]
             grid = torch.stack(torch.meshgrid(xx, yy, zz)).reshape(3, -1).T
 
-            print("  Evaluating NeRF on a grid")
+            print("Evaluating NeRF on a grid")
             out_chunks = []
             if use_dirs:
-                print("   Note: using SH projection")
+                print("Note: using SH projection")
                 # Adjust chunk size according to sample count to avoid OOM
                 chunk = max(chunk // sh_proj_sample_count, 1)
             for i in tqdm(range(0, grid.shape[0], chunk)):
                 grid_chunk = grid[i : i + chunk].cuda()
-                # TODO: support mip-NeRF
+                # TODO[later]: support mip-NeRF
                 if use_dirs:
                     def _spherical_func(viewdirs):
                         raw_rgb, sigma = eval_fn(grid_chunk[:, None], dirs=viewdirs)
@@ -688,7 +698,7 @@ class Scene:
 
             torch.cuda.empty_cache()
 
-            print("  Building octree structure")
+            print("Building octree structure")
             for i in range(init_grid_depth):
                 tree[grid].refine()
             print("  tree:", tree)
@@ -699,7 +709,7 @@ class Scene:
 
             # Just a sanity check, if it failed maybe all points got filtered out
             assert tree.max_depth == init_grid_depth
-            print(" Finishing up")
+            print("Finishing up")
 
             tree.shrink_to_fit()
             self.nerf = tree
