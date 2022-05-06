@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Sperical harmonics projection related functions
+"""Spherical harmonics projection related functions
 
 Some codes are borrowed from:
 https://github.com/google/spherical-harmonics/blob/master/sh/spherical_harmonics.cc
