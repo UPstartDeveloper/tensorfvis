@@ -13,7 +13,7 @@
 import os
 import sys
 import sphinx_rtd_theme
-from nerfvis import __version__
+from tensorfvis import __version__
 sys.path.insert(0, os.path.join(os.path.abspath('.'), '..'))
 
 

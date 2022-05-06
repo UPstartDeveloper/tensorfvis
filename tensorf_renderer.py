@@ -1,6 +1,6 @@
 import torch
 
-import nerfvis
+import tensorfvis
 from TensoRF.dataLoader import dataset_dict
 from TensoRF.models import tensoRF
 import TensoRF.utils as trf_utils
@@ -36,7 +36,7 @@ if __name__ == "__main__":
         is_stack=True
     )
     # B: make a new Scene
-    scene = nerfvis.Scene("TensoRF Real-time Renderer, V0.0.1")
+    scene = tensorfvis.Scene("TensoRF Real-time Renderer, V0.0.1")
     scene.add_axes()
     # C: set TensoRF as the rendering algorithm
     scene.set_nerf(
