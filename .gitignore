@@ -1,0 +1,12 @@
+env/
+*.pyc
+.DS_Store
+.vscode
+
+*/volrend/*
+
+*.th
+data/*
+
+# Ignoring TensoRF, to keep repo size down
+TensoRF/*
