@@ -653,15 +653,16 @@ class Scene:
                 print("Note: using SH projection")
                 # Adjust chunk size according to sample count to avoid OOM
                 chunk = max(chunk // sh_proj_sample_count, 1)
+            
+            def _spherical_func(viewdirs):
+                raw_rgb, sigma = eval_fn(
+                    grid_chunk[:, None], dirs=viewdirs)
+                return raw_rgb, sigma
+                    
             for i in tqdm(range(0, grid.shape[0], chunk)):
                 grid_chunk = grid[i: i + chunk].cuda()
                 # TODO[later]: support mip-NeRF
                 if use_dirs:
-                    def _spherical_func(viewdirs):
-                        raw_rgb, sigma = eval_fn(
-                            grid_chunk[:, None], dirs=viewdirs)
-                        return raw_rgb, sigma
-
                     rgb, sigma = project_fun(
                         order=sh_deg,
                         spherical_func=_spherical_func,
