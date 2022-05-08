@@ -266,10 +266,10 @@ def EvalSH(l: int, m: int, dirs):
 def spherical_uniform_sampling(sample_count, device="cpu"):
     # See: https://www.bogotobogo.com/Algorithms/uniform_distribution_sphere.php
     u1 = torch.arange(0, sample_count, dtype=torch.float32, device=device) + \
-         torch.rand([sample_count], dtype=torch.float32, device=device)
+        torch.rand([sample_count], dtype=torch.float32, device=device)
     u1 /= sample_count
     u2 = torch.arange(0, sample_count, dtype=torch.float32, device=device) + \
-         torch.rand([sample_count], dtype=torch.float32, device=device)
+        torch.rand([sample_count], dtype=torch.float32, device=device)
     u2 /= sample_count
     u2 = u2[torch.randperm(sample_count, device=device)]
     theta = torch.acos(2.0 * u1 - 1.0)
@@ -293,7 +293,8 @@ def project_function(
     dirs = spher2cart(theta, phi)  # [sample_count, 3]
 
     # evaluate the analytic function for the current spherical coords
-    func_value, others = spherical_func(dirs[None])  # func_value [batch_size, sample_count, C]
+    # func_value [batch_size, sample_count, C]
+    func_value, others = spherical_func(dirs[None])
 
     batch_size = func_value.shape[0]
 
@@ -337,8 +338,10 @@ def project_function_sparse(
     dirs = spher2cart(theta, phi)   # [sample_count, 3]
 
     # evaluate the analytic function for the current spherical coords
-    func_value, others = spherical_func(dirs[None])  # func_value [batch_size, sample_count, C]
+    # func_value [batch_size, sample_count, C]
+    func_value, others = spherical_func(dirs[None])
     batch_size = func_value.shape[0]
+
 
     coeff_count = GetCoefficientCount(order)
     basis_vals = torch.empty(
@@ -352,22 +355,22 @@ def project_function_sparse(
             basis_vals[:, GetIndex(l, m)] = EvalSH(l, m, dirs)
 
     basis_vals = basis_vals.view(
-           sample_count, coeff_count) # [sample_count, coeff_count]
+        sample_count, coeff_count)  # [sample_count, coeff_count]
     func_value = func_value.transpose(0, 1).reshape(
-           sample_count, batch_size * C) # [sample_count, batch_size * C]
+        sample_count, batch_size * C)  # [sample_count, batch_size * C]
     soln = torch.lstsq(func_value, basis_vals).solution[:basis_vals.size(1)]
     soln = soln.T.reshape(batch_size, -1)
-    others = others[:, :1, :]
+    # others = others[:, :1, :]  # TODO: get rid of
     others = others.reshape(batch_size, -1)
     return soln, others
 
 
 if __name__ == '__main__':
     batch_size = 2
+
     def sphfunc_one(x):
         return (EvalSH(1, -1, x) + EvalSH(1, 1, x) * 0.5)[None, :, None].expand(batch_size, -1, 3), None
         #  return torch.ones([batch_size] + list(x.shape[:-1]) + [3]), None
 
     coeffs, others = project_function_sparse(1, sphfunc_one, 10)
     print(coeffs)
-
