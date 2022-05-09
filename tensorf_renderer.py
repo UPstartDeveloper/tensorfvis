@@ -1,5 +1,5 @@
 ######################################################
-# THIS CODE IS DEPRECATED. 
+# THIS CODE IS DEPRECATED.
 # USERS SHOULD IMPLEMENT THEIR OWN RENDERING SCRIPT.
 # MORE DETAILS TBD.
 ######################################################
@@ -46,9 +46,9 @@
 #     scene.add_axes()
 #     # C: set TensoRF as the rendering algorithm
 #     scene.set_nerf(
-#         nerf_func, 
-#         center=[0.0, 0.0, 0.0], 
-#         radius=1.5, 
+#         nerf_func,
+#         center=[0.0, 0.0, 0.0],
+#         radius=1.5,
 #         use_dirs=True,
 #         dirs={}
 #     )
