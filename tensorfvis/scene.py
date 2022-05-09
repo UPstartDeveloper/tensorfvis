@@ -9,14 +9,14 @@ import warnings
 
 
 def _f(name: str, field: str):
-    return name + '__' + field
+    return name + "__" + field
 
 
 def _format_vec3(vec: np.ndarray):
-    return f'[{vec[0]}, {vec[1]}, {vec[2]}]'
+    return f"[{vec[0]}, {vec[1]}, {vec[2]}]"
 
 
-def _scipy_rotation_from_auto(rot: np.ndarray, input_type='matrix'):
+def _scipy_rotation_from_auto(rot: np.ndarray, input_type="matrix"):
     """
     Construct 3D rotation objects.
 
@@ -38,6 +38,7 @@ def _scipy_rotation_from_auto(rot: np.ndarray, input_type='matrix'):
     Returns: Rotation: provides an interface to represent 3D rotations
     """
     from scipy.spatial.transform import Rotation
+
     if input_type == "rotation_vec" and rot.shape[-1] == 3:
         q = Rotation.from_rotvec(rot)
     elif input_type == "quaternion" and rot.shape[-1] == 4:
@@ -72,8 +73,7 @@ def _angle_axis_rotate_vector_np(r: np.ndarray, v: np.ndarray):
         perp = np.cross(np.broadcast_to(axis, v_good.shape), v_good)
         dot = np.sum(axis * v_good, axis=-1, keepdims=True)
         result[good_mask_v] = (
-            v_good * cos_theta + perp * sin_theta +
-            axis * (dot * (1 - cos_theta))
+            v_good * cos_theta + perp * sin_theta + axis * (dot * (1 - cos_theta))
         )
     if v_bad.size:
         # From Ceres
@@ -108,7 +108,9 @@ def _rotate_vector_np(rot: np.ndarray, pt: np.ndarray):
     elif rot.shape[-1] == 4:
         return _quaternion_rotate_vector_np(rot, pt)
     elif rot.shape[-1] == 9:
-        return np.matmul(rot.reshape(list(rot.shape[:-1]) + [3, 3]), pt[..., None])[..., 0]
+        return np.matmul(rot.reshape(list(rot.shape[:-1]) + [3, 3]), pt[..., None])[
+            ..., 0
+        ]
     else:
         raise NotImplementedError
 
@@ -132,33 +134,36 @@ class Scene:
 
         self.world_up = None
         self.cam_forward = None
-        inf = float('inf')
+        inf = float("inf")
         self.bb_min = np.array([inf, inf, inf])
         self.bb_max = np.array([-inf, -inf, -inf])
 
     def _add_common(self, name, **kwargs):
         assert isinstance(name, str), "Name must be a string"
         if "time" in kwargs:
-            self.fields[_f(name, "time")] = np.array(
-                kwargs["time"]).astype(np.uint32)
+            self.fields[_f(name, "time")] = np.array(kwargs["time"]).astype(np.uint32)
         if "color" in kwargs:
-            self.fields[_f(name, "color")] = np.array(
-                kwargs["color"]).astype(np.float32)
+            self.fields[_f(name, "color")] = np.array(kwargs["color"]).astype(
+                np.float32
+            )
         if "scale" in kwargs:
             self.fields[_f(name, "scale")] = np.float32(kwargs["scale"])
         if "translation" in kwargs:
             self.fields[_f(name, "translation")] = np.array(
-                kwargs["translation"]).astype(np.float32)
+                kwargs["translation"]
+            ).astype(np.float32)
         if "rotation" in kwargs:
-            self.fields[_f(name, "rotation")] = np.array(
-                kwargs["rotation"]).astype(np.float32)
+            self.fields[_f(name, "rotation")] = np.array(kwargs["rotation"]).astype(
+                np.float32
+            )
         if "visible" in kwargs:
             self.fields[_f(name, "visible")] = int(kwargs["visible"])
         if "unlit" in kwargs:
             self.fields[_f(name, "unlit")] = int(kwargs["unlit"])
         if "vert_color" in kwargs:
-            self.fields[_f(name, "vert_color")] = np.array(
-                kwargs["vert_color"]).astype(np.float32)
+            self.fields[_f(name, "vert_color")] = np.array(kwargs["vert_color"]).astype(
+                np.float32
+            )
 
     def _update_bb(self, points, **kwargs):
         # FIXME handle rotation
@@ -204,8 +209,13 @@ class Scene:
         self._update_bb(p1, **kwargs)
         self._update_bb(p2, **kwargs)
 
-    def add_sphere(self, name: str,
-                   rings: Optional[int] = None, sectors: Optional[int] = None, **kwargs):
+    def add_sphere(
+        self,
+        name: str,
+        rings: Optional[int] = None,
+        sectors: Optional[int] = None,
+        **kwargs,
+    ):
         """
         Add a UV sphere with radius 1
 
@@ -234,9 +244,7 @@ class Scene:
         self._update_bb(p1, **kwargs)
         self._update_bb(p2, **kwargs)
 
-    def add_line(self, name: str,
-                 a: np.ndarray,
-                 b: np.ndarray, **kwargs):
+    def add_line(self, name: str, a: np.ndarray, b: np.ndarray, **kwargs):
         """
         Add a single line segment from a to b
 
@@ -261,10 +269,9 @@ class Scene:
         self._update_bb(a, **kwargs)
         self._update_bb(b, **kwargs)
 
-    def add_lines(self, name: str,
-                  points: np.ndarray,
-                  segs: Optional[np.ndarray] = None,
-                  **kwargs):
+    def add_lines(
+        self, name: str, points: np.ndarray, segs: Optional[np.ndarray] = None, **kwargs
+    ):
         """
         Add a series of line segments (in browser, lines are always size 1 right now)
 
@@ -290,10 +297,9 @@ class Scene:
             self.fields[_f(name, "segs")] = np.array(segs).astype(np.int32)
         self._update_bb(points, **kwargs)
 
-    def add_points(self, name: str,
-                   points: np.ndarray,
-                   point_size: float = 1.0,
-                   **kwargs):
+    def add_points(
+        self, name: str, points: np.ndarray, point_size: float = 1.0, **kwargs
+    ):
         """
         Add a point cloud (in browser, points are always size 1 right now)
 
@@ -318,11 +324,14 @@ class Scene:
             self.fields[_f(name, "point_size")] = np.float32(point_size)
         self._update_bb(points, **kwargs)
 
-    def add_mesh(self, name: str,
-                 points: np.ndarray,
-                 faces: Optional[np.ndarray] = None,
-                 face_size: Optional[int] = None,
-                 **kwargs):
+    def add_mesh(
+        self,
+        name: str,
+        points: np.ndarray,
+        faces: Optional[np.ndarray] = None,
+        face_size: Optional[int] = None,
+        **kwargs,
+    ):
         """
         Add a general mesh
 
@@ -353,16 +362,19 @@ class Scene:
             self.fields[_f(name, "faces")] = np.array(faces).astype(np.int32)
         self._update_bb(points, **kwargs)
 
-    def add_camera_frustum(self, name: str,
-                           focal_length: Optional[float] = None,
-                           image_width: Optional[float] = None,
-                           image_height: Optional[float] = None,
-                           z: Optional[float] = None,
-                           r: Optional[np.ndarray] = None,
-                           t: Optional[np.ndarray] = None,
-                           connect: bool = False,
-                           update_view: bool = True,
-                           **kwargs):
+    def add_camera_frustum(
+        self,
+        name: str,
+        focal_length: Optional[float] = None,
+        image_width: Optional[float] = None,
+        image_height: Optional[float] = None,
+        z: Optional[float] = None,
+        r: Optional[np.ndarray] = None,
+        t: Optional[np.ndarray] = None,
+        connect: bool = False,
+        update_view: bool = True,
+        **kwargs,
+    ):
         """
         Add one or more ideal perspective camera frustums
 
@@ -411,10 +423,12 @@ class Scene:
             if r.ndim == 3 and r.shape[1] == 3 and r.shape[2] == 3:
                 # Matrix
                 from scipy.spatial.transform import Rotation
+
                 r = Rotation.from_matrix(r).as_rotvec()
             elif r.ndim == 2 and r.shape[1] == 4:
                 # Quaternion
                 from scipy.spatial.transform import Rotation
+
                 r = Rotation.from_quat(r).as_rotvec()
             self.fields[_f(name, "r")] = np.array(r).astype(np.float32)
         if t is not None:
@@ -450,7 +464,9 @@ class Scene:
 
         self._update_bb(t, **kwargs)
 
-    def add_mesh_from_file(self, path: str, name_suffix: str = "", center: bool = False, **kwargs):
+    def add_mesh_from_file(
+        self, path: str, name_suffix: str = "", center: bool = False, **kwargs
+    ):
         """
         Add a mesh from path using trimesh
 
@@ -463,15 +479,21 @@ class Scene:
         Rest of keyword arguments passed to add_mesh
         """
         import trimesh  # pip install trimesh
-        mesh: trimesh.Trimesh = trimesh.load(path, force='mesh')
-        if hasattr(mesh.visual, 'vertex_colors') and len(mesh.visual.vertex_colors):
-            kwargs['vert_color'] = mesh.visual.vertex_colors[...,
-                                                             :3].astype(np.float32) / 255.0
+
+        mesh: trimesh.Trimesh = trimesh.load(path, force="mesh")
+        if hasattr(mesh.visual, "vertex_colors") and len(mesh.visual.vertex_colors):
+            kwargs["vert_color"] = (
+                mesh.visual.vertex_colors[..., :3].astype(np.float32) / 255.0
+            )
         verts = np.array(mesh.vertices)
         if center:
             verts = verts - np.mean(verts, axis=0)
-        self.add_mesh(osp.basename(path).replace('.', '_') + name_suffix, points=verts,
-                      faces=mesh.faces, **kwargs)
+        self.add_mesh(
+            osp.basename(path).replace(".", "_") + name_suffix,
+            points=verts,
+            faces=mesh.faces,
+            **kwargs,
+        )
         self._update_bb(verts, **kwargs)
 
     def add_axes(self, name: str = "axes", length: float = 1.0, **kwargs):
@@ -485,56 +507,62 @@ class Scene:
 
         Rest of keyword arguments passed to add_lines
         """
-        points = np.array([
-            [0.0, 0.0, 0.0],
-            [length, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, length, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, length],
-        ], dtype=np.float32)
-        self.add_lines(name, points=points,
-                       segs=np.array([
-                           [0, 1],
-                           [2, 3],
-                           [4, 5],
-                       ], dtype=np.int32),
-                       vert_color=np.array([
-                           [1.0, 0.0, 0.0],
-                           [1.0, 0.0, 0.0],
-                           [0.0, 1.0, 0.0],
-                           [0.0, 1.0, 0.0],
-                           [0.0, 0.0, 1.0],
-                           [0.0, 0.0, 1.0],
-                       ], dtype=np.int32),
-                       **kwargs)
+        points = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [length, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, length, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, length],
+            ],
+            dtype=np.float32,
+        )
+        self.add_lines(
+            name,
+            points=points,
+            segs=np.array([[0, 1], [2, 3], [4, 5],], dtype=np.int32),
+            vert_color=np.array(
+                [
+                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=np.int32,
+            ),
+            **kwargs,
+        )
         self._update_bb(points, **kwargs)
 
-    def set_nerf(self,
-                 eval_fn: Callable[..., Tuple[Any, Any]],
-                 center: Union[Tuple[float, float, float],
-                               List[float], float, np.ndarray, None]
-                 = None,
-                 radius: Union[Tuple[float, float, float],
-                               List[float], float, np.ndarray, None]
-                 = None,
-                 scale: float = 1.0,
-                 reso: int = 256,
-                 use_dirs: bool = False,
-                 sh_deg: int = 1,
-                 sh_proj_sample_count: int = 15,
-                 sh_proj_use_sparse: bool = True,
-                 sigma_thresh: float = 3.0,
-                 weight_thresh: float = 0.001,
-                 r: Optional[Any] = None,
-                 t: Optional[Any] = None,
-                 focal_length: Optional[Union[float,
-                                              Tuple[float, float]]] = None,
-                 image_width: Optional[float] = None,
-                 image_height: Optional[float] = None,
-                 sigma_multiplier: float = 1.0,
-                 chunk: int = 720720,
-                 device: str = "cuda:0"):
+    def set_nerf(
+        self,
+        eval_fn: Callable[..., Tuple[Any, Any]],
+        center: Union[
+            Tuple[float, float, float], List[float], float, np.ndarray, None
+        ] = None,
+        radius: Union[
+            Tuple[float, float, float], List[float], float, np.ndarray, None
+        ] = None,
+        scale: float = 1.0,
+        reso: int = 256,
+        use_dirs: bool = False,
+        sh_deg: int = 1,
+        sh_proj_sample_count: int = 15,
+        sh_proj_use_sparse: bool = True,
+        sigma_thresh: float = 3.0,
+        weight_thresh: float = 0.001,
+        r: Optional[Any] = None,
+        t: Optional[Any] = None,
+        focal_length: Optional[Union[float, Tuple[float, float]]] = None,
+        image_width: Optional[float] = None,
+        image_height: Optional[float] = None,
+        sigma_multiplier: float = 1.0,
+        chunk: int = 720720,
+        device: str = "cuda:0",
+    ):
         """
         Discretize and display a NeRF (low quality, for visualization purposes only).
         Currently only supports PyTorch NeRFs.
@@ -612,7 +640,10 @@ class Scene:
         from svox import N3Tree
         from svox.helpers import _get_c_extension
         from .sh import project_function_sparse, project_function
-        project_fun = project_function_sparse if sh_proj_use_sparse else project_function
+
+        project_fun = (
+            project_function_sparse if sh_proj_use_sparse else project_function
+        )
 
         # Let's get the PyTorch CUDA extension for PlenOctrees
         _C = _get_c_extension()
@@ -622,8 +653,7 @@ class Scene:
             init_grid_depth = reso.bit_length() - 2
 
             # Guard Clause
-            assert 2 ** (init_grid_depth +
-                         1) == reso, "Grid size must be a power of 2"
+            assert 2 ** (init_grid_depth + 1) == reso, "Grid size must be a power of 2"
 
             # Init the PlenOctree
             tree = N3Tree(
@@ -653,27 +683,27 @@ class Scene:
                 print("Note: using SH projection")
                 # Adjust chunk size according to sample count to avoid OOM
                 chunk = max(chunk // sh_proj_sample_count, 1)
-            
+
             def _spherical_func(viewdirs):
-                raw_rgb, sigma = eval_fn(
-                    grid_chunk[:, None], dirs=viewdirs)
+                raw_rgb, sigma = eval_fn(grid_chunk[:, None], dirs=viewdirs)
                 return raw_rgb, sigma
-                    
+
             for i in tqdm(range(0, grid.shape[0], chunk)):
-                grid_chunk = grid[i: i + chunk].cuda()
+                grid_chunk = grid[i : i + chunk].cuda()
                 # TODO[later]: support mip-NeRF
                 if use_dirs:
                     rgb, sigma = project_fun(
                         order=sh_deg,
                         spherical_func=_spherical_func,
                         sample_count=sh_proj_sample_count,
-                        device=grid_chunk.device)
+                        device=grid_chunk.device,
+                    )
                 else:
                     rgb, sigma = eval_fn(grid_chunk)
                     if rgb.shape[-1] == 1:
                         rgb = rgb.expand(-1, 3)  # Grayscale
-                    elif rgb.shape[-1] != 3 and str(tree.data_format) == 'RGBA':
-                        tree.expand(f'SH{rgb.shape[-1] // 3}')
+                    elif rgb.shape[-1] != 3 and str(tree.data_format) == "RGBA":
+                        tree.expand(f"SH{rgb.shape[-1] // 3}")
 
                 rgb_sigma = torch.cat([rgb, sigma], dim=-1)
                 del grid_chunk, rgb, sigma
@@ -681,8 +711,10 @@ class Scene:
             rgb_sigma = torch.cat(out_chunks, 0)
             del out_chunks
 
-            def _calculate_grid_weights(sigmas, c2w, focal_length, image_width, image_height):
-                print('  Performing weight thresholding ')
+            def _calculate_grid_weights(
+                sigmas, c2w, focal_length, image_width, image_height
+            ):
+                print("  Performing weight thresholding ")
                 # Weight thresholding impl
                 opts = _C.RenderOptions()
                 opts.step_size = 1e-5
@@ -700,18 +732,15 @@ class Scene:
                 grid_data = sigmas.reshape((reso, reso, reso)).contiguous()
                 maximum_weight = torch.zeros_like(grid_data)
                 camspace_trans = torch.diag(
-                    torch.tensor([1, -1, -1, 1],
-                                 dtype=sigmas.dtype, device=sigmas.device)
+                    torch.tensor(
+                        [1, -1, -1, 1], dtype=sigmas.dtype, device=sigmas.device
+                    )
                 )
                 for idx in tqdm(range(c2w.shape[0])):
                     cam.c2w = c2w[idx]
                     cam.c2w = cam.c2w @ camspace_trans
                     grid_weight, _ = _C.grid_weight_render(
-                        grid_data,
-                        cam,
-                        opts,
-                        tree.offset,
-                        tree.invradius,
+                        grid_data, cam, opts, tree.offset, tree.invradius,
                     )
                     maximum_weight = torch.max(maximum_weight, grid_weight)
                 return maximum_weight
@@ -721,18 +750,38 @@ class Scene:
                 mask = rgb_sigma[..., -1] >= sigma_thresh
             else:
                 # Weight thresh
-                assert (focal_length is not None and image_height is not None and
-                        image_width is not None), "All of r, t, focal_length, image_width, " \
+                assert (
+                    focal_length is not None
+                    and image_height is not None
+                    and image_width is not None
+                ), (
+                    "All of r, t, focal_length, image_width, "
                     "image_height should be provided to set_nerf to use weight thresholding"
+                )
                 grid_weights = _calculate_grid_weights(
-                    rgb_sigma[..., -1:], c2w.float(), focal_length, image_width, image_height)
-                mask = grid_weights.reshape(-1) >= weight_thresh
+                    rgb_sigma[..., -1:],
+                    c2w.float(),
+                    focal_length,
+                    image_width,
+                    image_height,
+                )
+                mask = (
+                    grid_weights.reshape(-1) >= weight_thresh
+                )  # default threshold = 0.001
             grid = grid[mask]
             rgb_sigma = rgb_sigma[mask]
             del mask
-            assert grid.shape[0] > 0, "This NeRF is completely empty! Make sure you set the bounds reasonably"
-            print("  Grid shape =", grid.shape, "min =", grid.min(dim=0).values,
-                  " max =", grid.max(dim=0).values)
+            assert (
+                grid.shape[0] > 0
+            ), "This NeRF is completely empty! Make sure you set the bounds reasonably"
+            print(
+                "  Grid shape =",
+                grid.shape,
+                "min =",
+                grid.min(dim=0).values,
+                " max =",
+                grid.max(dim=0).values,
+            )
             grid = grid.cuda()
 
             torch.cuda.empty_cache()
@@ -761,22 +810,27 @@ class Scene:
 
         :param path: output npz path
         """
-        if not path.endswith('.draw.npz'):
-            warnings.warn('The filename does not end in .draw.npz, '
-                          'this will not work in web viewer')
+        if not path.endswith(".draw.npz"):
+            warnings.warn(
+                "The filename does not end in .draw.npz, "
+                "this will not work in web viewer"
+            )
         np.savez_compressed(path, **self.fields)
 
-    def export(self, dirname: Optional[str] = None,
-               display: bool = False,
-               world_up: Optional[np.ndarray] = None,
-               cam_center: Optional[np.ndarray] = None,
-               cam_forward: Optional[np.ndarray] = None,
-               cam_origin: Optional[np.ndarray] = None,
-               tree_file: Optional[str] = None,
-               instructions: List[str] = [],
-               url: str = 'localhost',
-               port: int = 8889,
-               open_browser: bool = True):
+    def export(
+        self,
+        dirname: Optional[str] = None,
+        display: bool = False,
+        world_up: Optional[np.ndarray] = None,
+        cam_center: Optional[np.ndarray] = None,
+        cam_forward: Optional[np.ndarray] = None,
+        cam_origin: Optional[np.ndarray] = None,
+        tree_file: Optional[str] = None,
+        instructions: List[str] = [],
+        url: str = "localhost",
+        port: int = 8889,
+        open_browser: bool = True,
+    ):
         """
         Write to a standalone web viewer
 
@@ -801,6 +855,7 @@ class Scene:
         """
         if dirname is None:
             import tempfile
+
             dirname = osp.join(tempfile.gettempdir(), "nerfvis_temp")
         os.makedirs(dirname, exist_ok=True)
 
@@ -832,34 +887,40 @@ class Scene:
         all_instructions.extend(instructions)
         # Use lower PlenOctree render quality
         # (ugly hack, executes javascript in the browser like this)
-        all_instructions.extend(["let opt = Volrend.get_options()",
-                                 "opt.step_size = 2e-3",
-                                 "opt.stop_thresh = 1e-1",
-                                 "opt.sigma_thresh = 1e-1",
-                                 "Volrend.set_options(opt)"])
+        all_instructions.extend(
+            [
+                "let opt = Volrend.get_options()",
+                "opt.step_size = 2e-3",
+                "opt.stop_thresh = 1e-1",
+                "opt.sigma_thresh = 1e-1",
+                "Volrend.set_options(opt)",
+            ]
+        )
         out_npz_fname = f"volrend.draw.npz"
         all_instructions.append(f'Volrend.set_title("{self.title}")')
         all_instructions.append(f'load_remote("{out_npz_fname}")')
         if self.nerf is not None:
             tree_file = "nerf.npz"
-            self.nerf.save(osp.join(dirname, tree_file),
-                           compress=True)  # Faster saving
+            self.nerf.save(osp.join(dirname, tree_file), compress=True)  # Faster saving
         if tree_file is not None:
             all_instructions.append(f'load_remote("{tree_file}")')
         if world_up is not None:
             all_instructions.append(
-                f'Volrend.set_world_up(' + _format_vec3(world_up) + ')')
+                f"Volrend.set_world_up(" + _format_vec3(world_up) + ")"
+            )
         if cam_center is not None:
             all_instructions.append(
-                'Volrend.set_cam_center(' + _format_vec3(cam_center) + ')')
+                "Volrend.set_cam_center(" + _format_vec3(cam_center) + ")"
+            )
         if cam_forward is not None:
             all_instructions.append(
-                'Volrend.set_cam_back(' + _format_vec3(-cam_forward) + ')')
+                "Volrend.set_cam_back(" + _format_vec3(-cam_forward) + ")"
+            )
         if cam_origin is not None:
             all_instructions.append(
-                'Volrend.set_cam_origin(' + _format_vec3(cam_origin) + ')')
-        MONKEY_PATCH = \
-            """
+                "Volrend.set_cam_origin(" + _format_vec3(cam_origin) + ")"
+            )
+        MONKEY_PATCH = """
     <script>
         Volrend.onRuntimeInitialized = function() {
             $(document).ready(function() {
@@ -868,7 +929,9 @@ class Scene:
             });
         }
     </script>
-""".replace("{{instructions}}", ";\n".join(all_instructions))
+""".replace(
+            "{{instructions}}", ";\n".join(all_instructions)
+        )
         dir_path = osp.dirname(osp.realpath(__file__))
         zip_path = osp.join(dir_path, "volrend.zip")
         index_html_path = osp.join(dirname, "index.html")
@@ -876,7 +939,8 @@ class Scene:
             os.unlink(index_html_path)
 
         import zipfile
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(dirname)
 
         self.write(osp.join(dirname, out_npz_fname))
@@ -895,18 +959,22 @@ class Scene:
             class LocalHandler(SimpleHTTPRequestHandler):
                 def __init__(self, *args, **kwargs):
                     super().__init__(*args, directory=dirname, **kwargs)
-            server = HTTPServer(('', port), LocalHandler)
 
-            print(f'Serving {url}:{port}')
+            server = HTTPServer(("", port), LocalHandler)
+
+            print(f"Serving {url}:{port}")
             if open_browser:
                 import webbrowser
                 import threading
 
                 def open_webbrowser():
-                    if not webbrowser.open_new(f'{url}:{port}'):
-                        print('Could not open web browser',
-                              '(note: server still launched, '
-                              'please just open given port manually, using port forarding)')
+                    if not webbrowser.open_new(f"{url}:{port}"):
+                        print(
+                            "Could not open web browser",
+                            "(note: server still launched, "
+                            "please just open given port manually, using port forarding)",
+                        )
+
                 t = threading.Thread(target=open_webbrowser)
                 t.start()
             server.serve_forever()
