@@ -2,7 +2,7 @@
 NeRF + Drawing
 """
 import numpy as np
-import os
+import os, gc
 import os.path as osp
 from typing import Optional, List, Union, Callable, Tuple, Any
 import warnings
@@ -685,13 +685,26 @@ class Scene:
                 chunk = max(chunk // sh_proj_sample_count, 1)
 
             def _spherical_func(viewdirs):
-                raw_rgb, sigma = eval_fn(grid_chunk[:, None], dirs=viewdirs)
+                rays_o = (  # this tensor becomes 1, 3], then [ssh_proj_sample_count, 3]
+                    torch.tensor(center, device=viewdirs.device)
+                    .view(1, -1)
+                    .repeat(viewdirs.shape[1], 1)
+                )
+                raw_rgb, sigma = eval_fn(
+                    grid_chunk[:, None],
+                    # ray origins: presumed to be the center of the sphere
+                    origins=rays_o,
+                    dirs=viewdirs[0],
+                )
                 return raw_rgb, sigma
 
             for i in tqdm(range(0, grid.shape[0], chunk)):
-                grid_chunk = grid[i : i + chunk].cuda()
+                grid_chunk = grid[i : i + chunk]
+                if torch.cuda.is_available():
+                    grid_chunk = grid_chunk.cuda()
                 # TODO[later]: support mip-NeRF
                 if use_dirs:
+
                     rgb, sigma = project_fun(
                         order=sh_deg,
                         spherical_func=_spherical_func,
@@ -708,6 +721,7 @@ class Scene:
                 rgb_sigma = torch.cat([rgb, sigma], dim=-1)
                 del grid_chunk, rgb, sigma
                 out_chunks.append(rgb_sigma.squeeze(-1))
+
             rgb_sigma = torch.cat(out_chunks, 0)
             del out_chunks
 
@@ -765,9 +779,7 @@ class Scene:
                     image_width,
                     image_height,
                 )
-                mask = (
-                    grid_weights.reshape(-1) >= weight_thresh
-                )  # default threshold = 0.001
+                mask = grid_weights.reshape(-1) >= weight_thresh
             grid = grid[mask]
             rgb_sigma = rgb_sigma[mask]
             del mask
