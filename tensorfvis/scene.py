@@ -619,6 +619,8 @@ class Scene:
 
         if isinstance(center, list) or isinstance(center, tuple):
             center = np.array(center)
+        elif isinstance(center, torch.Tensor):
+            center = center.clone().detach()
         if isinstance(radius, list) or isinstance(radius, tuple):
             radius = np.array(radius)
         radius *= scale
@@ -675,6 +677,7 @@ class Scene:
             xx = (arr - offset[0]) / scale[0]
             yy = (arr - offset[1]) / scale[1]
             zz = (arr - offset[2]) / scale[2]
+            # dims here are [reso ** 3, 3]
             grid = torch.stack(torch.meshgrid(xx, yy, zz)).reshape(3, -1).T
 
             print("Evaluating NeRF on a grid")
@@ -687,11 +690,11 @@ class Scene:
             def _spherical_func(viewdirs):
                 rays_o = (  # this tensor becomes 1, 3], then [ssh_proj_sample_count, 3]
                     torch.tensor(center, device=viewdirs.device)
-                    .view(1, -1)
+                    .view(1, 3)
                     .repeat(viewdirs.shape[1], 1)
                 )
                 raw_rgb, sigma = eval_fn(
-                    grid_chunk[:, None],
+                    grid_chunk[:, None],  # dims [chunk, 1, 3]
                     # ray origins: presumed to be the center of the sphere
                     origins=rays_o,
                     dirs=viewdirs[0],
