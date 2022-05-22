@@ -4,20 +4,22 @@
 # described by Chen et. al.: https://arxiv.org/abs/2203.09517
 ######################################################
 
-
-from absl import app
-from absl import flags
-
+# always include these imports
 import torch
 
 import tensorflow as tf
 from jax import random
 import numpy as np
+from tensorfvis.scene import Scene
 
-from snerg.tensorfvis import Scene
+# model-specific imports - differs based on what kind of radiance field tooling you have
+# (in this case, we have SNeRG + TensoRF)
+from absl import app
+from absl import flags
 
 from snerg import model_zoo
 from snerg.model_zoo import utils, datasets
+
 from TensoRF.dataLoader import ray_utils
 import TensoRF.dataLoader as trf_data_utils
 
@@ -60,7 +62,7 @@ def main(unused_argv):
 
         return model, init_variables, test_dataset
 
-    def _infer_on_rays(xyz_sampled, dirs, sh_deg=2):
+    def _infer_on_rays(xyz_sampled=None, dirs=None, sh_deg=2):
         """
         relies on the outer scope to use TensoRF (requires TensoRF trained with SH rendering).
         
@@ -70,19 +72,21 @@ def main(unused_argv):
             sh_deg: int, for TensoRF you can use 0-4
         """
         # TODO: for c2w - use an identity matrix for now
-        c2w = torch.ones((4, 4), device=DEVICE_BACKEND)[:3, :]  # (3, 4) matrix
-        directions = test_ds.directions.to(device=DEVICE_BACKEND)
+        # c2w = torch.ones((4, 4), device=DEVICE_BACKEND)[:3, :]  # (3, 4) matrix
+        # directions = test_ds.directions.to(device=DEVICE_BACKEND)
         #  for directions - pass the directions obj from the ds_obj
-        rays_origin, rays_dir = ray_utils.get_rays(directions, c2w)
+        # rays_origin, rays_dir = ray_utils.get_rays(directions, c2w)
         # concat THOSE rays together, to pass to the subsequent funcs
-        rays_chunk = torch.cat([rays_origin, rays_dir], dim=1)
+        # rays_chunk = torch.cat([rays_origin, rays_dir], dim=1)
         # A: get the sigma
-        sigma = tensorf.compute_density(rays_chunk, xyz_sampled.shape[0])
+        # sigma = tensorf.compute_density(rays_chunk, xyz_sampled.shape[0])
         # # B: get the rgb
-        features = tensorf.compute_feature(xyz_sampled)
-        raw_rgb = tensorf.compute_raw_rgb(dirs, features)
-        reshaped_rgb = raw_rgb.transpose(1, 2)  # TODO[check this has dims of: [batch_size, sh_proj_sample_count, 3]
-        return reshaped_rgb, sigma
+        # features = tensorf.compute_feature(xyz_sampled)
+        # raw_rgb = tensorf.compute_raw_rgb(dirs, features)
+        # reshaped_rgb = raw_rgb.transpose(1, 2)  # TODO[check this has dims of: [batch_size, sh_proj_sample_count, 3]
+        # return reshaped_rgb, sigma
+        # TODO[refactor?]
+        return tensorf.evaluate_on_grid(test_ds)
 
     ### DRIVER
     # A: load in our TensoRF, and the dataset
@@ -114,7 +118,8 @@ def main(unused_argv):
         _infer_on_rays,
         center=tensorf.get_center().cpu(),
         radius=1.5,  # required when there's no previous call to _update_bb
-        use_dirs=True,
+        use_dirs=False,
+        use_tensorf=True,
         device=tensorf.DEVICE_BACKEND,
         sh_deg=sh_deg,  # guessing it's 2, based on how eval_sh() is used in TensoRF code
         reso=int(reso),  # power of two that's closest to "voxel_resolution" flag on config, but won't cause OOM
