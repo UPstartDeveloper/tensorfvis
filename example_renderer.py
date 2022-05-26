@@ -10,7 +10,8 @@ import torch
 import tensorflow as tf
 from jax import random
 import numpy as np
-from tensorfvis.scene import Scene
+# from tensorfvis.scene import Scene
+from tensorfvis.tensorf_scene import TensorfScene
 
 # optional to include gc - might be useful to avoid OOM
 import gc
@@ -139,7 +140,8 @@ def main(unused_argv):
     # del jax_dataset  # avoiding OOM
     gc.collect()
     # B: make a new Scene
-    scene = Scene("TensoRF Real-time Renderer, Version 0.2")
+    scene = TensorfScene("TensoRF Real-time Renderer, Version 0.3")
+    # scene = Scene("TensoRF Real-time Renderer, Version 0.2")
     # scene.add_axes()
     # C: set TensoRF as the rendering algorithm
 
@@ -152,6 +154,7 @@ def main(unused_argv):
     B = int(torch.log2(num_batches))
     chunk = sh_proj_sample_count * (2 ** ((3 * R) - B))
     scene.set_nerf(
+        FLAGS.rgb_sigma_path,
         _infer_on_rays,
         # center=tensorf.get_center().cpu(),  # TODO[rerun] with test_ds.center
         center=test_ds.center,
