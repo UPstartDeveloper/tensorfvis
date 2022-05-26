@@ -12,16 +12,20 @@ from jax import random
 import numpy as np
 from tensorfvis.scene import Scene
 
+# optional to include gc - might be useful to avoid OOM
+import gc
+
 # model-specific imports - differs based on what kind of radiance field tooling you have
 # (in this case, we have SNeRG + TensoRF)
-from absl import app
-from absl import flags
+from absl import app, flags
 
 from snerg import model_zoo
 from snerg.model_zoo import utils, datasets
 
 from TensoRF.dataLoader import ray_utils
 import TensoRF.dataLoader as trf_data_utils
+from TensoRF.models import tensoRF
+from TensoRF import renderer
 
 
 DEVICE_BACKEND = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,9 +43,7 @@ def main(unused_argv):
         # get the test set
         print(f"FLAGS: {FLAGS.absolute_data_dir, FLAGS.tensorf_factor}")
         return data_loader(
-            FLAGS.absolute_data_dir, 
-            split="test", 
-            downsample=FLAGS.tensorf_factor
+            FLAGS.absolute_data_dir, split="test", downsample=FLAGS.tensorf_factor, is_stack=True,
         )
 
     def _get_model_and_ds():
@@ -61,6 +63,22 @@ def main(unused_argv):
         model, init_variables = model_zoo.get_model(key, test_dataset.peek(), FLAGS)
 
         return model, init_variables, test_dataset
+
+    def _torch_get_model_and_ds(FLAGS):
+        '''only using PyTorch
+        TODO[refactor] - make a function to do this in TensoRF.models.__init__
+        '''
+        if FLAGS.config is not None:
+            utils.update_flags(FLAGS)
+
+        # A: grab the checkpoint file
+        ckpt = torch.load(FLAGS.tensorf_checkpoint, map_location=DEVICE_BACKEND)
+        kwargs = ckpt["kwargs"]
+        kwargs.update({"device": DEVICE_BACKEND})
+        # B: instantiate the appropiate TensoRF
+        tensorf = tensoRF.TensorVMSplit(**kwargs)
+        tensorf.load(ckpt)
+        return tensorf
 
     def _infer_on_rays(xyz_sampled=None, dirs=None, sh_deg=2):
         """
@@ -85,23 +103,43 @@ def main(unused_argv):
         # raw_rgb = tensorf.compute_raw_rgb(dirs, features)
         # reshaped_rgb = raw_rgb.transpose(1, 2)  # TODO[check this has dims of: [batch_size, sh_proj_sample_count, 3]
         # return reshaped_rgb, sigma
-        # TODO[refactor?]
-        return tensorf.evaluate_on_grid(test_ds)
+        # option 1 - JAX style
+        # return tensorf.evaluate_on_grid(test_ds)
+        # TODO: PyTorch style - pass the chunk size
+        rgb, sigma = renderer.evaluation_for_rgb_sigma(
+            test_dataset=test_ds,
+            tensorf=tensorf,
+            c2ws=test_ds.poses,
+            renderer=renderer.OctreeRender_trilinear_fast,
+            white_bg=test_ds.white_bg,
+            return_rgb_sigma_only=True,
+            device=DEVICE_BACKEND
+        )
+        rgb_sigma = torch.cat([rgb, sigma], dim=-1)
+        del rgb, sigma  # trying to avoid OOM
+        return rgb_sigma
 
     ### DRIVER
+    tf.config.experimental.set_visible_devices([], "GPU")
+    tf.config.experimental.set_visible_devices([], "TPU")
+    torch.cuda.set_per_process_memory_fraction(fraction=1.00)
     # A: load in our TensoRF, and the dataset
-    tensorf, _, jax_dataset = _get_model_and_ds()
-    # TODO: add the TensoRF ds via new methods
+    # tensorf, _, jax_dataset = _get_model_and_ds()
+    tensorf = _torch_get_model_and_ds(FLAGS)
     test_ds = _get_trf_dataset(FLAGS)
+    # TODO[refactor] - consider using the TensoRF ds for getting r and t
     rotations, translations = None, None
-    if isinstance(jax_dataset, datasets.Blender):
-        camtoworlds = jax_dataset.peek()["camtoworlds"]  # dims are (4, 4)
-        rotations, translations = datasets.decompose_camera_transforms(camtoworlds)
-        # ensure rotations is a 3D array and translations is 2D
-        rotations = rotations[np.newaxis, :, :]  # (1, 3, 3)
-        translations = translations[np.newaxis, :]  # (1, 3)
+    # if isinstance(jax_dataset, datasets.Blender):
+    # camtoworlds = jax_dataset.peek()["camtoworlds"]  # dims are (4, 4)
+    camtoworlds = test_ds.poses  # if going only w/ PyTorch
+    rotations, translations = datasets.decompose_camera_transforms(camtoworlds)
+    # ensure rotations is a 3D array and translations is 2D
+    # rotations = rotations[np.newaxis, :, :]  # (1, 3, 3)
+    translations = translations[np.newaxis, :]  # (1, 3)
+    # del jax_dataset  # avoiding OOM
+    gc.collect()
     # B: make a new Scene
-    scene = Scene("TensoRF Real-time Renderer, Version 0.1")
+    scene = Scene("TensoRF Real-time Renderer, Version 0.2")
     # scene.add_axes()
     # C: set TensoRF as the rendering algorithm
 
@@ -112,25 +150,28 @@ def main(unused_argv):
     num_batches = torch.tensor([2 ** 10])
     R = int(torch.log2(reso))
     B = int(torch.log2(num_batches))
-    chunk = sh_proj_sample_count * (2 ** ((3 * R )- B))
-
+    chunk = sh_proj_sample_count * (2 ** ((3 * R) - B))
     scene.set_nerf(
         _infer_on_rays,
-        center=tensorf.get_center().cpu(),
-        radius=1.5,  # required when there's no previous call to _update_bb
+        # center=tensorf.get_center().cpu(),  # TODO[rerun] with test_ds.center
+        center=test_ds.center,
+        # TODO[renrun] use test_ds.radius
+        radius=test_ds.radius,  # required when there's no previous call to _update_bb
         use_dirs=False,
         use_tensorf=True,
-        device=tensorf.DEVICE_BACKEND,
+        device=DEVICE_BACKEND,
         sh_deg=sh_deg,  # guessing it's 2, based on how eval_sh() is used in TensoRF code
-        reso=int(reso),  # power of two that's closest to "voxel_resolution" flag on config, but won't cause OOM
-        scale=tensorf.get_distance_scale(),
+        reso=int(
+            reso
+        ),  # power of two that's closest to "voxel_resolution" flag on config, but won't cause OOM
+        scale=tensorf.distance_scale,
         # scale=1.0,  # trying to avoid empty NeRF
         sh_proj_sample_count=sh_proj_sample_count,  # TODO[do-better]: hardcoded after playing around - read https://www.bogotobogo.com/Algorithms/uniform_distribution_sphere.php
         r=rotations,
         t=translations,
-        focal_length=jax_dataset.focal,
-        image_height=jax_dataset.h,
-        image_width=jax_dataset.w,
+        focal_length=test_ds.focal,
+        image_height=test_ds.img_wh[1],
+        image_width=test_ds.img_wh[0],
         chunk=chunk,
     )
     # D: render!
