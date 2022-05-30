@@ -11,7 +11,7 @@ import tensorflow as tf
 from jax import random
 import numpy as np
 # from tensorfvis.scene import Scene
-from tensorfvis.tensorf_scene import TensorfScene
+from tensorfvis.tensorfvis.tensorf_scene import TensorfScene
 
 # optional to include gc - might be useful to avoid OOM
 import gc
@@ -156,10 +156,10 @@ def main(unused_argv):
     scene.set_nerf(
         FLAGS.rgb_sigma_path,
         _infer_on_rays,
-        # center=tensorf.get_center().cpu(),  # TODO[rerun] with test_ds.center
-        center=test_ds.center,
+        # center=tensorf.get_center().cpu(),
+        center=test_ds.center[0][0],  # (3,)
         # TODO[renrun] use test_ds.radius
-        radius=test_ds.radius,  # required when there's no previous call to _update_bb
+        radius=test_ds.radius[0][0],  # (3, ), required when there's no previous call to _update_bb
         use_dirs=False,
         use_tensorf=True,
         device=DEVICE_BACKEND,
