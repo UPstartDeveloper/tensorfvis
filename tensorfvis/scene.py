@@ -2,7 +2,7 @@
 NeRF + Drawing
 """
 import numpy as np
-import os
+import os, gc
 import os.path as osp
 from typing import Optional, List, Union, Callable, Tuple, Any
 import warnings
@@ -549,6 +549,7 @@ class Scene:
         scale: float = 1.0,
         reso: int = 256,
         use_dirs: bool = False,
+        use_tensorf: bool = False,
         sh_deg: int = 1,
         sh_proj_sample_count: int = 15,
         sh_proj_use_sparse: bool = True,
@@ -589,6 +590,10 @@ class Scene:
                          pre-activation RGB output in addition to density.
                          See the description for the eval_fn param above for more info on
                          the function spec.
+        :param use_tensorf: bool, if true, will assume use of TensoRF's own utilities to 
+                         evaluate your NeRF on the grid. use_dirs should be false.
+                         Please see this TensoRF repo for more details: 
+                         https://github.com/UPstartDeveloper/NeRF-to-XR/blob/skateboard-api/snerg/model_zoo/tensorf.py.
         :param sh_deg: int, SH degree if use_dirs, must be between 0-4
         :param sh_proj_sample_count: SH projection samples if use_dirs
         :param sh_proj_use_sparse: Use sparse SH projection via least-squares rather than
@@ -619,6 +624,8 @@ class Scene:
 
         if isinstance(center, list) or isinstance(center, tuple):
             center = np.array(center)
+        elif isinstance(center, torch.Tensor):
+            center = center.clone().detach()
         if isinstance(radius, list) or isinstance(radius, tuple):
             radius = np.array(radius)
         radius *= scale
@@ -675,6 +682,7 @@ class Scene:
             xx = (arr - offset[0]) / scale[0]
             yy = (arr - offset[1]) / scale[1]
             zz = (arr - offset[2]) / scale[2]
+            # dims here are [reso ** 3, 3]
             grid = torch.stack(torch.meshgrid(xx, yy, zz)).reshape(3, -1).T
 
             print("Evaluating NeRF on a grid")
@@ -684,31 +692,49 @@ class Scene:
                 # Adjust chunk size according to sample count to avoid OOM
                 chunk = max(chunk // sh_proj_sample_count, 1)
 
-            def _spherical_func(viewdirs):
-                raw_rgb, sigma = eval_fn(grid_chunk[:, None], dirs=viewdirs)
-                return raw_rgb, sigma
-
-            for i in tqdm(range(0, grid.shape[0], chunk)):
-                grid_chunk = grid[i : i + chunk].cuda()
-                # TODO[later]: support mip-NeRF
-                if use_dirs:
-                    rgb, sigma = project_fun(
-                        order=sh_deg,
-                        spherical_func=_spherical_func,
-                        sample_count=sh_proj_sample_count,
-                        device=grid_chunk.device,
+                def _spherical_func(viewdirs):
+                    rays_o = (  # this tensor becomes 1, 3], then [ssh_proj_sample_count, 3]
+                        torch.tensor(center, device=viewdirs.device)
+                        .view(1, 3)
+                        .repeat(viewdirs.shape[1], 1)
                     )
-                else:
-                    rgb, sigma = eval_fn(grid_chunk)
-                    if rgb.shape[-1] == 1:
-                        rgb = rgb.expand(-1, 3)  # Grayscale
-                    elif rgb.shape[-1] != 3 and str(tree.data_format) == "RGBA":
-                        tree.expand(f"SH{rgb.shape[-1] // 3}")
+                    raw_rgb, sigma = eval_fn(
+                        grid_chunk[:, None],  # dims [chunk, 1, 3]
+                        # ray origins: presumed to be the center of the sphere
+                        origins=rays_o,
+                        dirs=viewdirs[0],
+                    )
+                    return raw_rgb, sigma
 
-                rgb_sigma = torch.cat([rgb, sigma], dim=-1)
-                del grid_chunk, rgb, sigma
-                out_chunks.append(rgb_sigma.squeeze(-1))
-            rgb_sigma = torch.cat(out_chunks, 0)
+            if use_tensorf:
+                rgb_sigma = eval_fn() # TODO: fill in args
+
+            else:
+                for i in tqdm(range(0, grid.shape[0], chunk)):
+                    grid_chunk = grid[i : i + chunk]
+                    if torch.cuda.is_available():
+                        grid_chunk = grid_chunk.cuda()
+                    # TODO[later]: support mip-NeRF
+                    if use_dirs:
+
+                        rgb, sigma = project_fun(
+                            order=sh_deg,
+                            spherical_func=_spherical_func,
+                            sample_count=sh_proj_sample_count,
+                            device=grid_chunk.device,
+                        )
+                    else:
+                        rgb, sigma = eval_fn(grid_chunk)
+                        if rgb.shape[-1] == 1:
+                            rgb = rgb.expand(-1, 3)  # Grayscale
+                        elif rgb.shape[-1] != 3 and str(tree.data_format) == "RGBA":
+                            tree.expand(f"SH{rgb.shape[-1] // 3}")
+
+                    rgb_sigma = torch.cat([rgb, sigma], dim=-1)
+                    del grid_chunk, rgb, sigma
+                    out_chunks.append(rgb_sigma.squeeze(-1))
+                    rgb_sigma = torch.cat(out_chunks, 0)
+
             del out_chunks
 
             def _calculate_grid_weights(
@@ -765,9 +791,7 @@ class Scene:
                     image_width,
                     image_height,
                 )
-                mask = (
-                    grid_weights.reshape(-1) >= weight_thresh
-                )  # default threshold = 0.001
+                mask = grid_weights.reshape(-1) >= weight_thresh
             grid = grid[mask]
             rgb_sigma = rgb_sigma[mask]
             del mask

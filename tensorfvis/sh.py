@@ -292,8 +292,9 @@ def project_function(
     dirs = spher2cart(theta, phi)  # [sample_count, 3]
 
     # evaluate the analytic function for the current spherical coords
-    # func_value [batch_size, sample_count, C]
-    func_value, others = spherical_func(dirs[None])
+    func_value, others = spherical_func(
+        dirs[None]
+    )  # func_value [batch_size, sample_count, C]
 
     batch_size = func_value.shape[0]
 
@@ -334,9 +335,12 @@ def project_function_sparse(
     dirs = spher2cart(theta, phi)  # [sample_count, 3]
 
     # evaluate the analytic function for the current spherical coords
-    # func_value [batch_size, sample_count, C]
-    func_value, others = spherical_func(dirs[None])
-    batch_size = func_value.shape[0]
+    func_value, others = spherical_func(
+        dirs[None]
+    )  # func_value [batch_size, sample_count, C]
+    batch_size = func_value.shape[
+        0
+    ]  # batch size equals max(chunk // sh_proj_sample_count, 1)) when calling set_nerf
 
     coeff_count = GetCoefficientCount(order)
     basis_vals = torch.empty([sample_count, coeff_count], dtype=torch.float32).to(
@@ -352,13 +356,14 @@ def project_function_sparse(
     basis_vals = basis_vals.view(
         sample_count, coeff_count
     )  # [sample_count, coeff_count]
-    func_value = func_value.transpose(0, 1).reshape(
+    func_value = func_value.transpose(0, 1)
+    func_value = func_value.reshape(
         sample_count, batch_size * C
     )  # [sample_count, batch_size * C]
     soln = torch.lstsq(func_value, basis_vals).solution[: basis_vals.size(1)]
-    soln = soln.T.reshape(batch_size, -1)
-    # others = others[:, :1, :]  # TODO: get rid of
-    others = others.reshape(batch_size, -1)
+    soln = soln.T.reshape(batch_size, -1)  # [batch_size, sample_count * C]
+    others = others.reshape(batch_size, 1)  # as per the nerfvis documentation
+
     return soln, others
 
 
