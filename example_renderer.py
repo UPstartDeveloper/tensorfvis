@@ -1,8 +1,6 @@
 ######################################################
 # THIS SCRIPT IS IN PROGRESS!
-# It is based on using TensoRF.
-# It has dependencies on the SNeRG and TensoRF implementations in this repo:
-# https://github.com/UPstartDeveloper/NeRF-to-XR
+# It is based on using TensoRF,
 # described by Chen et. al.: https://arxiv.org/abs/2203.09517
 ######################################################
 
@@ -12,8 +10,8 @@ import torch
 import tensorflow as tf
 from jax import random
 import numpy as np
-# from tensorfvis.scene import Scene
-from tensorfvis.tensorf_scene import TensorfScene
+from tensorfvis.tensorfvis.scene import Scene
+# from tensorfvis.tensorfvis.tensorf_scene import TensorfScene
 
 # optional to include gc - might be useful to avoid OOM
 import gc
@@ -41,7 +39,7 @@ def main(unused_argv):
     ### HELPERS
     def _get_trf_dataset(FLAGS):
         """Returns the in-memory PyTorch version of the dataset for this TensoRF."""
-        # assues self.dataset is one of ["blender", "llff", "tankstemple", "nsvf", "own_data"]
+        # assumes self.dataset is one of ["blender", "blender_variable_size", "llff", "tankstemple", "nsvf", "own_data"]
         data_loader = trf_data_utils.dataset_dict[FLAGS.dataset]
         # get the test set
         print(f"FLAGS: {FLAGS.absolute_data_dir, FLAGS.tensorf_factor}")
@@ -92,6 +90,22 @@ def main(unused_argv):
             dirs: [sh_proj_sample_count, 3]
             sh_deg: int, for TensoRF you can use 0-4
         """
+        # TODO: for c2w - use an identity matrix for now
+        # c2w = torch.ones((4, 4), device=DEVICE_BACKEND)[:3, :]  # (3, 4) matrix
+        # directions = test_ds.directions.to(device=DEVICE_BACKEND)
+        #  for directions - pass the directions obj from the ds_obj
+        # rays_origin, rays_dir = ray_utils.get_rays(directions, c2w)
+        # concat THOSE rays together, to pass to the subsequent funcs
+        # rays_chunk = torch.cat([rays_origin, rays_dir], dim=1)
+        # A: get the sigma
+        # sigma = tensorf.compute_density(rays_chunk, xyz_sampled.shape[0])
+        # # B: get the rgb
+        # features = tensorf.compute_feature(xyz_sampled)
+        # raw_rgb = tensorf.compute_raw_rgb(dirs, features)
+        # reshaped_rgb = raw_rgb.transpose(1, 2)  # TODO[check this has dims of: [batch_size, sh_proj_sample_count, 3]
+        # return reshaped_rgb, sigma
+        # option 1 - JAX style
+        # return tensorf.evaluate_on_grid(test_ds)
         # TODO: PyTorch style - pass the chunk size
         rgb, sigma = renderer.evaluation_for_rgb_sigma(
             test_dataset=test_ds,
@@ -106,6 +120,42 @@ def main(unused_argv):
         del rgb, sigma  # trying to avoid OOM
         return rgb_sigma
 
+    def _infer_on_rays_using_dir_formula(xyz_sampled=None, dirs=None, sh_deg=2):
+        """
+        relies on the outer scope to use TensoRF (requires TensoRF trained with SH rendering).
+        
+        Dims:
+            xyz_sampled: [chunk_size  // sh_proj_sample_count, 1, 3]
+            dirs: [sh_proj_sample_count, 3]
+            sh_deg: int, for TensoRF you can use 0-4
+        """
+        # TODO: for c2w - use an identity matrix for now
+        # c2w = torch.ones((4, 4), device=DEVICE_BACKEND)[:3, :]  # (3, 4) matrix
+        # directions = test_ds.directions.to(device=DEVICE_BACKEND)
+        #  for directions - pass the directions obj from the ds_obj
+        rays_origin = xyz_sampled
+        x, y, z = (
+            rays_origin[:, 0].reshape(-1, 1), 
+            rays_origin[:, 1].reshape(-1, 1), 
+            rays_origin[:, 2].reshape(-1, 1)
+        )
+        # math based on: https://math.stackexchange.com/questions/1710817/how-to-find-a-normal-vector-to-a-surface-at-a-given-point
+        rays_dir = torch.cat([x/z, y/z, torch.ones_like(z)], 1)
+        # concat THOSE rays together, to pass to the subsequent funcs
+        rays_total = torch.cat([rays_origin, rays_dir], dim=1)
+        # get RGB sigma, using batches
+        rgbs, _, sigmas, _, _ = renderer.OctreeRender_trilinear_fast(
+            rays_total, tensorf, return_rgb_sigma_only=True
+        ) 
+        rgb_sigma = torch.cat([rgbs, sigmas], dim=-1)
+        del rgbs, sigmas  # trying to avoid OOM
+        return rgb_sigma
+
+    def _get_center(tensorf):
+        box_coords = tensorf.aabb.view(2, 3)
+        min_coords, max_coords = box_coords[0], box_coords[1]
+        return ((max_coords - min_coords) / 2) + min_coords
+
     ### DRIVER
     tf.config.experimental.set_visible_devices([], "GPU")
     tf.config.experimental.set_visible_devices([], "TPU")
@@ -115,16 +165,20 @@ def main(unused_argv):
     tensorf = _torch_get_model_and_ds(FLAGS)
     test_ds = _get_trf_dataset(FLAGS)
     # TODO[refactor] - consider using the TensoRF ds for getting r and t
-    rotations, translations = None, None
+    # rotations, translations = None, None
     # if isinstance(jax_dataset, datasets.Blender):
     # camtoworlds = jax_dataset.peek()["camtoworlds"]  # dims are (4, 4)
     camtoworlds = test_ds.poses  # if going only w/ PyTorch
     rotations, translations = datasets.decompose_camera_transforms(camtoworlds)
+    # ensure rotations is a 3D array and translations is 2D
+    # rotations = rotations[np.newaxis, :, :]  # (1, 3, 3)
     translations = translations[np.newaxis, :]  # (1, 3)
     # del jax_dataset  # avoiding OOM
     gc.collect()
     # B: make a new Scene
-    scene = TensorfScene("TensoRF Real-time Renderer, Version 0.3")
+    # scene = TensorfScene("TensoRF Real-time Renderer, Version 0.3")
+    scene = Scene("TensoRF Real-time Renderer, Version 0.4")
+    # scene.add_axes()
     # C: set TensoRF as the rendering algorithm
 
     # set the configs - these equations are just for hacking purposes
@@ -136,12 +190,12 @@ def main(unused_argv):
     B = int(torch.log2(num_batches))
     chunk = sh_proj_sample_count * (2 ** ((3 * R) - B))
     scene.set_nerf(
-        FLAGS.rgb_sigma_path,
-        _infer_on_rays,
+        # FLAGS.rgb_sigma_path,
+        _infer_on_rays_using_dir_formula,
         # center=tensorf.get_center().cpu(),
-        center=test_ds.center[0][0].numpy(),  # (3,)
+        center=_get_center(tensorf),  # (3,)
         # TODO[renrun] use test_ds.radius
-        radius=test_ds.radius[0][0].numpy(),  # (3, ), required when there's no previous call to _update_bb
+        radius=test_ds.radius[0][0],  # (3, ), required when there's no previous call to _update_bb
         use_dirs=False,
         use_tensorf=True,
         device=DEVICE_BACKEND,
